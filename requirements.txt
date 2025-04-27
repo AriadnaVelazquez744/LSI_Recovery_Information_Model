@@ -1,0 +1,7 @@
+gensim
+ir_datasets
+numpy
+scikit-learn
+scipy
+spacy
+tabulate
