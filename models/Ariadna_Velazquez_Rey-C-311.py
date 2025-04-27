@@ -98,6 +98,7 @@ class InformationRetrievalModel:
         
         # 3. Construye pipeline de transformación
         self.pipeline = make_pipeline(
+            # BM25Vectorizer(
             TfidfVectorizer(
                 max_df=0.8,    # Ignora términos en >80% docs
                 min_df=2       # Ignora términos en <2 docs
@@ -198,6 +199,9 @@ class InformationRetrievalModel:
         
         return result
 
+
+
+
     def _expand_query(self, original_query: str, top_docs: int = 3, top_terms: int = 5) -> str:
         """
         Mejora: Expande la consulta con términos relevantes de los primeros documentos recuperados
@@ -219,3 +223,32 @@ class InformationRetrievalModel:
         # 4. Construcción de consulta expandida
         expanded_terms = [feature_names[i] for i in top_terms_indices]
         return f"{original_query} {' '.join(expanded_terms)}"
+
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from scipy.sparse import csr_matrix
+
+class BM25Vectorizer(TfidfVectorizer):
+    """
+    Mejora: Implementación BM25 para mejor ponderación de términos
+    Fórmula: log(1 + (N - n + 0.5)/(n + 0.5)) * (k + 1) * tf / (k * (1 - b + b * (|d|/avgdl)) + tf)
+    """
+    def __init__(self, k=1.5, b=0.75, **kwargs):
+        super().__init__(**kwargs)
+        self.k = k
+        self.b = b
+
+    def transform(self, raw_documents):
+        tf = super().transform(raw_documents)
+        doc_lengths = tf.sum(axis=1).A1
+        avg_dl = doc_lengths.mean()
+        
+        # Aplicar fórmula BM25
+        idf = np.log(1 + (self._num_docs - (tf > 0).sum(axis=0).A1 + 0.5) / 
+                    ((tf > 0).sum(axis=0).A1 + 0.5))
+        
+        tf_bm25 = tf.multiply(self.k + 1) / (
+            tf + self.k * (1 - self.b + self.b * doc_lengths[:, None]/avg_dl)
+        )
+        
+        return csr_matrix(tf_bm25.multiply(idf))
