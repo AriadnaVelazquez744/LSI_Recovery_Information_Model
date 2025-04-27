@@ -5,9 +5,12 @@
     "dictionaries": [],
     "words": [
         "cranfield",
+        "Lematización",
         "qrel",
         "qrels",
+        "stopwords",
         "tfidf",
+        "Tokenización",
         "vectorizer"
     ],
     "ignoreWords": [],

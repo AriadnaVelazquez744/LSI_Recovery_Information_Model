@@ -1,5 +1,5 @@
 
-NAME = "Ariadna Velázquez Rey"
+NAME = "Francisco Guerra Piloto"
 GROUP = "311"
 CAREER = "Ciencia de la Computación"
 MODEL = "Modelo Aleatorio de ejemplo"
