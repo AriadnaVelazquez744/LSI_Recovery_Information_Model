@@ -136,6 +136,12 @@ class InformationRetrievalModel:
         """
         results = {}
         for qid, query_text in self.queries.items():
+            # # Aplicar expansión de consulta
+            # expanded_query = self._expand_query(query_text)
+            
+            # # 1. Transforma query al espacio latente
+            # query_vec = self.pipeline.transform([expanded_query])
+            
             # 1. Transforma query al espacio latente
             query_vec = self.pipeline.transform([query_text])
             
@@ -191,3 +197,25 @@ class InformationRetrievalModel:
             }
         
         return result
+
+    def _expand_query(self, original_query: str, top_docs: int = 3, top_terms: int = 5) -> str:
+        """
+        Mejora: Expande la consulta con términos relevantes de los primeros documentos recuperados
+        Técnica: Pseudo-Relevance Feedback (PRF)
+        """
+        # 1. Recuperación inicial de documentos
+        query_vec = self.pipeline.transform([original_query])
+        similarities = cosine_similarity(query_vec, self.doc_vectors)
+        top_indices = np.argsort(similarities[0])[::-1][:top_docs]
+        
+        # 2. Extracción de términos relevantes
+        vectorizer = self.pipeline.named_steps['tfidfvectorizer']
+        feature_names = vectorizer.get_feature_names_out()
+        
+        # 3. Cálculo de pesos de términos en documentos relevantes
+        doc_weights = np.sum(self.doc_vectors[top_indices], axis=0)
+        top_terms_indices = np.argsort(doc_weights)[-top_terms:]
+        
+        # 4. Construcción de consulta expandida
+        expanded_terms = [feature_names[i] for i in top_terms_indices]
+        return f"{original_query} {' '.join(expanded_terms)}"
