@@ -81,34 +81,6 @@ class InformationRetrievalModel:
         self.n_components = n_components  # Dimensiones del espacio latente
         self.nlp = _load_spacy_model()  # Carga diferida
 
-    def _preprocess(self, text: str) -> str:
-        """
-        Procesamiento lingüístico completo.
-        Detección de bigramas y correcciones básicas
-        """
-        doc = self.nlp(text)     # Tokenización con spaCy
-        
-        # Detección de bigramas frecuentes
-        bigrams = []
-        for token in doc[:-1]:
-            if not token.is_stop and not doc[token.i+1].is_stop:
-                bigrams.append(f"{token.lemma_}_{doc[token.i+1].lemma_}")
-        
-        # Corrección de errores comunes
-        corrections = {
-            'teh': 'the', 'adn': 'and', 'th e': 'the'
-        }
-        
-        tokens = [
-            corrections.get(token.lemma_.lower(), token.lemma_.lower())
-            for token in doc
-            if not token.is_stop and 
-            token.is_alpha and 
-            len(token.lemma_) > 2
-        ] + bigrams
-        
-        return " ".join(tokens)
-
     def fit(self, dataset_name: str):
         """
         Carga y procesa un dataset de ir_datasets, incluyendo todas sus queries.
@@ -121,7 +93,7 @@ class InformationRetrievalModel:
         
         # Extrae y pre-procesa documentos
         self.doc_ids = [doc.doc_id for doc in self.dataset.docs_iter()]
-        processed_docs = [self._preprocess(doc.text) for doc in self.dataset.docs_iter()]
+        processed_docs = [self._text_preprocess(doc.text) for doc in self.dataset.docs_iter()]
         
         # Construye pipeline de transformación
         self.pipeline = make_pipeline(
@@ -141,7 +113,7 @@ class InformationRetrievalModel:
         
         # Pre-procesa y almacena queries
         self.queries = {
-            q.query_id: self._preprocess(q.text)
+            q.query_id: self._text_preprocess(q.text)
             for q in self.dataset.queries_iter()
         }
     
@@ -167,15 +139,15 @@ class InformationRetrievalModel:
             expanded_query = self._expand_query(query_text)
             weighted_query = self._weight_terms(expanded_query)         
             
-            # 1. Transforma query al espacio latente
+            # Transforma query al espacio latente
             query_vec = self.pipeline.transform([weighted_query])
             
-            # 2. Calcula similitud coseno con documentos
+            # Calcula similitud coseno con documentos
             similarities = cosine_similarity(query_vec, self.doc_vectors)
             
             # Ordena documentos por relevancia, filtrando la relevancia para solo los score mayores incluso si no completa el top_k
             similarities_array = similarities[0]
-            threshold = np.max(similarities_array) * 0.65  # 50% del score máximo
+            threshold = np.max(similarities_array) * 0.65  # 65% del score máximo
             mask = similarities_array >= threshold
             filtered_indices = np.where(mask)[0]
             sorted_filtered_indices = filtered_indices[np.argsort(-similarities_array[filtered_indices])]
@@ -229,7 +201,33 @@ class InformationRetrievalModel:
         
         return result
 
-
+    def _text_preprocess(self, text: str) -> str:
+        """
+        Procesamiento lingüístico completo.
+        Detección de bigramas y correcciones básicas
+        """
+        doc = self.nlp(text)     # Tokenización con spaCy
+        
+        # Detección de bigramas frecuentes
+        bigrams = []
+        for token in doc[:-1]:
+            if not token.is_stop and not doc[token.i+1].is_stop:
+                bigrams.append(f"{token.lemma_}_{doc[token.i+1].lemma_}")
+        
+        # Corrección de errores comunes
+        corrections = {
+            'teh': 'the', 'adn': 'and', 'th e': 'the'
+        }
+        
+        tokens = [
+            corrections.get(token.lemma_.lower(), token.lemma_.lower())
+            for token in doc
+            if not token.is_stop and 
+            token.is_alpha and 
+            len(token.lemma_) > 2
+        ] + bigrams
+        
+        return " ".join(tokens)
 
 
     def _expand_query(self, original_query: str, top_docs: int = 3, top_terms: int = 5) -> str:
