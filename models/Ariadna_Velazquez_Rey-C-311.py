@@ -105,7 +105,7 @@ class InformationRetrievalModel:
             ),
             TruncatedSVD(      # Reducción dimensional
                 n_components=self.n_components,
-                algorithm='arpack'  # Algoritmo estable para matrices sparse
+                algorithm='randomized',  # Algoritmo estable para matrices densas
             ),
             Normalizer(norm='l2')   # Normalización de vectores
         )
