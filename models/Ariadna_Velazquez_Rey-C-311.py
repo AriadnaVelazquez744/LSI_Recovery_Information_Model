@@ -7,38 +7,52 @@ MODEL = "Modelo de Semántica Latente (LSI)"
 """
 INFORMACIÓN EXTRA:
 
-Fuente bibliográfica: Deerwester, S., et al. (1990). 
-"Indexing by Latent Semantic Analysis". Journal of the American Society for Information Science.
+Fuente bibliográfica: 
+Deerwester, S., et al. (1990). "Indexing by Latent Semantic Analysis". Journal of the American Society for Information Science.
 ...
 
 Mejora implementada:
+    1. Preprocesamiento mejorado con bigramas y corrección léxica:
+    - Detección automática de pares de términos frecuentes (ej: "machine_learning")
+    - Corrección de errores tipográficos comunes (ej: "teh" → "the")
+    -. Beneficio: Mejora la cobertura de términos relevantes
+
+    2. Expansión semiautomática de consultas (Pseudo-Relevance Feedback):
+    - Recupera documentos iniciales usando consulta original
+    - Extrae términos relevantes de los top-3 documentos
+    -. Beneficio: Mitiga problemas de vocabulario escaso
+
+    3. Ponderación adaptativa de términos en consultas:
+    - Asigna pesos usando fórmula (1 + log(tf)) * idf
+    - Formato de consulta mejorado (ej: "información^2.3 retrieval^1.8")
+    -. Beneficio: Prioriza términos discriminativos
+
+    4. Filtrado dinámico por umbral de similitud:
+    - Descarta documentos con score < 65% del máximo
+    -. Beneficio: Reduce ruido en resultados
+
 ...
 
 Definición del modelo:
-Q: Consultas representadas como vectores en espacio latente (SVD(query))
-D: Documentos proyectados en espacio latente (SVD(docs))
-F: Función de similitud coseno entre vectores latentes
-R: Ranking por orden descendente de similitud
+Q: Consultas representadas como vectores en espacio latente (SVD(query)).
+D: Documentos proyectados en espacio latente (SVD(docs)).
+F: Función de similitud coseno entre vectores latentes.
+R: sim(dj, q) en el rango [0,1], donde mayores valores indican mayor similitud semántica.
 
 ¿Dependencia entre los términos?
-No (pero captura relaciones semánticas latentes)
+Sí, SVD captura co-ocurrencias latentes en espacio reducido.
 ...
 
 Correspondencia parcial documento-consulta:
-Sí (similitud de cosenos en espacio latente)
+Sí, se realiza matching semántico vía similitud coseno en el espacio latente.
 ...
 
 Ranking:
-Sí (ordenamiento por score de similitud)
+Sí, ordenamiento por sim(Q,D) con filtrado de documentos marginalmente relevantes.
 ...
-
 """
 
-
 import ir_datasets
-import random
-
-
 import numpy as np
 import spacy
 from sklearn.decomposition import TruncatedSVD
@@ -67,20 +81,33 @@ class InformationRetrievalModel:
         self.n_components = n_components  # Dimensiones del espacio latente
         self.nlp = _load_spacy_model()  # Carga diferida
 
-    def _preprocess_old(self, text: str) -> str:
+    def _preprocess(self, text: str) -> str:
         """
-        Procesamiento lingüístico completo
+        Procesamiento lingüístico completo.
+        Detección de bigramas y correcciones básicas
         """
-        doc = self.nlp(text)  # 1. Tokenización con spaCy
+        doc = self.nlp(text)     # Tokenización con spaCy
+        
+        # Detección de bigramas frecuentes
+        bigrams = []
+        for token in doc[:-1]:
+            if not token.is_stop and not doc[token.i+1].is_stop:
+                bigrams.append(f"{token.lemma_}_{doc[token.i+1].lemma_}")
+        
+        # Corrección de errores comunes
+        corrections = {
+            'teh': 'the', 'adn': 'and', 'th e': 'the'
+        }
+        
         tokens = [
-            token.lemma_.lower()       # 2. Lematización (raíz de palabra)
+            corrections.get(token.lemma_.lower(), token.lemma_.lower())
             for token in doc
-            if not token.is_stop and    # 3. Filtra stopwords (el, la, y...)
-            token.is_alpha and          # 4. Elimina números/puntuación
-            len(token.lemma_) > 2       # 5. Descarta palabras muy cortas
-        ]
-        return " ".join(tokens)  # 6. Une tokens en string limpio
-
+            if not token.is_stop and 
+            token.is_alpha and 
+            len(token.lemma_) > 2
+        ] + bigrams
+        
+        return " ".join(tokens)
 
     def fit(self, dataset_name: str):
         """
@@ -89,16 +116,15 @@ class InformationRetrievalModel:
         Args:
             dataset_name (str): Nombre del dataset en ir_datasets (ej: 'cranfield')
         """
-        # 1. Carga dataset
+        # Carga dataset
         self.dataset = ir_datasets.load(dataset_name)
         
-        # 2. Extrae y pre-procesa documentos
+        # Extrae y pre-procesa documentos
         self.doc_ids = [doc.doc_id for doc in self.dataset.docs_iter()]
         processed_docs = [self._preprocess(doc.text) for doc in self.dataset.docs_iter()]
         
-        # 3. Construye pipeline de transformación
+        # Construye pipeline de transformación
         self.pipeline = make_pipeline(
-            # BM25Vectorizer(
             TfidfVectorizer(
                 max_df=0.8,    # Ignora términos en >80% docs
                 min_df=2       # Ignora términos en <2 docs
@@ -110,10 +136,10 @@ class InformationRetrievalModel:
             Normalizer(norm='l2')   # Normalización de vectores
         )
         
-        # 4. Entrena modelo y transforma documentos
+        # Entrena modelo y transforma documentos
         self.doc_vectors = self.pipeline.fit_transform(processed_docs)
         
-        # 5. Pre-procesa y almacena queries
+        # Pre-procesa y almacena queries
         self.queries = {
             q.query_id: self._preprocess(q.text)
             for q in self.dataset.queries_iter()
@@ -137,20 +163,24 @@ class InformationRetrievalModel:
         """
         results = {}
         for qid, query_text in self.queries.items():
-            # Aplicar expansión de consulta
+            # Aplicar expansión y peso de la consulta 
             expanded_query = self._expand_query(query_text)
+            weighted_query = self._weight_terms(expanded_query)         
             
             # 1. Transforma query al espacio latente
-            query_vec = self.pipeline.transform([expanded_query])
-            
-            # 1. Transforma query al espacio latente
-            # query_vec = self.pipeline.transform([query_text])
+            query_vec = self.pipeline.transform([weighted_query])
             
             # 2. Calcula similitud coseno con documentos
             similarities = cosine_similarity(query_vec, self.doc_vectors)
             
-            # 3. Ordena documentos por relevancia
-            top_indices = np.argsort(similarities[0])[::-1][:top_k]
+            # Ordena documentos por relevancia, filtrando la relevancia para solo los score mayores incluso si no completa el top_k
+            similarities_array = similarities[0]
+            threshold = np.max(similarities_array) * 0.65  # 50% del score máximo
+            mask = similarities_array >= threshold
+            filtered_indices = np.where(mask)[0]
+            sorted_filtered_indices = filtered_indices[np.argsort(-similarities_array[filtered_indices])]
+            top_indices = sorted_filtered_indices[:top_k]
+
             results[qid] = {
                 'text': query_text,  
                 'results': [self.doc_ids[i] for i in top_indices] 
@@ -207,76 +237,40 @@ class InformationRetrievalModel:
         Mejora: Expande la consulta con términos relevantes de los primeros documentos recuperados
         Técnica: Pseudo-Relevance Feedback (PRF)
         """
-        # 1. Recuperación inicial de documentos
+        # Recuperación inicial de documentos
         query_vec = self.pipeline.transform([original_query])
         similarities = cosine_similarity(query_vec, self.doc_vectors)
         top_indices = np.argsort(similarities[0])[::-1][:top_docs]
         
-        # 2. Extracción de términos relevantes
+        # Extracción de términos relevantes
         vectorizer = self.pipeline.named_steps['tfidfvectorizer']
         feature_names = vectorizer.get_feature_names_out()
         
-        # 3. Cálculo de pesos de términos en documentos relevantes
+        # Cálculo de pesos de términos en documentos relevantes
         doc_weights = np.sum(self.doc_vectors[top_indices], axis=0)
         top_terms_indices = np.argsort(doc_weights)[-top_terms:]
         
-        # 4. Construcción de consulta expandida
+        # Construcción de consulta expandida
         expanded_terms = [feature_names[i] for i in top_terms_indices]
         return f"{original_query} {' '.join(expanded_terms)}"
 
 
-
-    def _preprocess(self, text: str) -> str:
+    def _weight_terms(self, query: str) -> str:
         """
-        Mejora: Añade detección de bigramas y corrección básica
+        Asigna pesos a términos usando: (1 + log(tf)) * idf
+        Formato: "term^2.5 other_term^0.8"
         """
-        doc = self.nlp(text)
+        vectorizer = self.pipeline.named_steps['tfidfvectorizer']
+        tf = vectorizer.transform([query]).sum(axis=0).A1
+        idf = vectorizer.idf_
         
-        # 1. Detección de bigramas frecuentes
-        bigrams = []
-        for token in doc[:-1]:
-            if not token.is_stop and not doc[token.i+1].is_stop:
-                bigrams.append(f"{token.lemma_}_{doc[token.i+1].lemma_}")
-        
-        # 2. Corrección de errores comunes
-        corrections = {
-            'teh': 'the', 'adn': 'and', 'th e': 'the'
-        }
-        
-        # 3. Procesamiento original + mejoras
-        tokens = [
-            corrections.get(token.lemma_.lower(), token.lemma_.lower())
-            for token in doc
-            if not token.is_stop and token.is_alpha and len(token.lemma_) > 2
-        ] + bigrams
-        
-        return " ".join(tokens)
-
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-from scipy.sparse import csr_matrix
-
-class BM25Vectorizer(TfidfVectorizer):
-    """
-    Mejora: Implementación BM25 para mejor ponderación de términos
-    Fórmula: log(1 + (N - n + 0.5)/(n + 0.5)) * (k + 1) * tf / (k * (1 - b + b * (|d|/avgdl)) + tf)
-    """
-    def __init__(self, k=1.5, b=0.75, **kwargs):
-        super().__init__(**kwargs)
-        self.k = k
-        self.b = b
-
-    def transform(self, raw_documents):
-        tf = super().transform(raw_documents)
-        doc_lengths = tf.sum(axis=1).A1
-        avg_dl = doc_lengths.mean()
-        
-        # Aplicar fórmula BM25
-        idf = np.log(1 + (self._num_docs - (tf > 0).sum(axis=0).A1 + 0.5) / 
-                    ((tf > 0).sum(axis=0).A1 + 0.5))
-        
-        tf_bm25 = tf.multiply(self.k + 1) / (
-            tf + self.k * (1 - self.b + self.b * doc_lengths[:, None]/avg_dl)
-        )
-        
-        return csr_matrix(tf_bm25.multiply(idf))
+        weighted_terms = []
+        for term in query.split():
+            if term in vectorizer.vocabulary_:
+                idx = vectorizer.vocabulary_[term]
+                weight = (1 + np.log1p(tf[idx])) * idf[idx]
+                weighted_terms.append(f"{term}^{round(weight, 1)}")
+            else:
+                weighted_terms.append(term)
+                
+        return ' '.join(weighted_terms)
