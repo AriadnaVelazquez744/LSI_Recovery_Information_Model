@@ -67,7 +67,7 @@ class InformationRetrievalModel:
         self.n_components = n_components  # Dimensiones del espacio latente
         self.nlp = _load_spacy_model()  # Carga diferida
 
-    def _preprocess(self, text: str) -> str:
+    def _preprocess_old(self, text: str) -> str:
         """
         Procesamiento lingüístico completo
         """
@@ -137,14 +137,14 @@ class InformationRetrievalModel:
         """
         results = {}
         for qid, query_text in self.queries.items():
-            # # Aplicar expansión de consulta
-            # expanded_query = self._expand_query(query_text)
-            
-            # # 1. Transforma query al espacio latente
-            # query_vec = self.pipeline.transform([expanded_query])
+            # Aplicar expansión de consulta
+            expanded_query = self._expand_query(query_text)
             
             # 1. Transforma query al espacio latente
-            query_vec = self.pipeline.transform([query_text])
+            query_vec = self.pipeline.transform([expanded_query])
+            
+            # 1. Transforma query al espacio latente
+            # query_vec = self.pipeline.transform([query_text])
             
             # 2. Calcula similitud coseno con documentos
             similarities = cosine_similarity(query_vec, self.doc_vectors)
@@ -223,6 +223,34 @@ class InformationRetrievalModel:
         # 4. Construcción de consulta expandida
         expanded_terms = [feature_names[i] for i in top_terms_indices]
         return f"{original_query} {' '.join(expanded_terms)}"
+
+
+
+    def _preprocess(self, text: str) -> str:
+        """
+        Mejora: Añade detección de bigramas y corrección básica
+        """
+        doc = self.nlp(text)
+        
+        # 1. Detección de bigramas frecuentes
+        bigrams = []
+        for token in doc[:-1]:
+            if not token.is_stop and not doc[token.i+1].is_stop:
+                bigrams.append(f"{token.lemma_}_{doc[token.i+1].lemma_}")
+        
+        # 2. Corrección de errores comunes
+        corrections = {
+            'teh': 'the', 'adn': 'and', 'th e': 'the'
+        }
+        
+        # 3. Procesamiento original + mejoras
+        tokens = [
+            corrections.get(token.lemma_.lower(), token.lemma_.lower())
+            for token in doc
+            if not token.is_stop and token.is_alpha and len(token.lemma_) > 2
+        ] + bigrams
+        
+        return " ".join(tokens)
 
 
 from sklearn.feature_extraction.text import TfidfVectorizer
