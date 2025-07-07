@@ -14,7 +14,7 @@ Deerwester, S., et al. (1990). "Indexing by Latent Semantic Analysis". Journal o
 Mejora implementada:
     1. Preprocesamiento mejorado con bigramas y corrección léxica:
     - Detección automática de pares de términos frecuentes (ej: "machine_learning")
-    - Corrección de errores tipográficos comunes (ej: "teh" → "the")
+    - Corrección de errores tipográficos específicos ("teh" → "the", "adn" → "and", "th e" → "the")
     -. Beneficio: Mejora la cobertura de términos relevantes
 
     2. Expansión semiautomática de consultas (Pseudo-Relevance Feedback):
@@ -29,6 +29,7 @@ Mejora implementada:
 
     4. Filtrado dinámico por umbral de similitud:
     - Descarta documentos con score < 65% del máximo
+    - Justificación: El umbral se calcula como el 65% del score máximo de cada consulta específica, no es un valor fijo predefinido. Esto significa que se adapta automáticamente a la distribución de similitudes de cada consulta individual.
     -. Beneficio: Reduce ruido en resultados
 
 ...
@@ -36,7 +37,7 @@ Mejora implementada:
 Definición del modelo:
 Q: Consultas representadas como vectores en espacio latente (SVD(query)).
 D: Documentos proyectados en espacio latente (SVD(docs)).
-F: Función de similitud coseno entre vectores latentes.
+F: Framework scikit-learn con TruncatedSVD, TfidfVectorizer y cosine_similarity.
 R: sim(dj, q) en el rango [0,1], donde mayores valores indican mayor similitud semántica.
 
 ¿Dependencia entre los términos?
