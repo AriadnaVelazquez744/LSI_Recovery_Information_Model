@@ -6,22 +6,9 @@ MODEL = "Modelo de Semántica Latente (LSI)"
 """
 INFORMACIÓN EXTRA:
 
-Fuentes bibliográficas principales:
-1. Manning, C. D., Raghavan, P., & Schütze, H. (2008). "Introduction to Information Retrieval". Cambridge University Press. Capítulo 18: "Matrix decompositions and latent semantic indexing".
-   - Define el modelo LSI con SVD y explica la matemática de descomposición de matrices
-   - Cubre similitud coseno en espacio latente y pipeline TF-IDF → SVD → Normalization
-
-2. Berry, M. W., Dumais, S. T., & O'Brien, G. W. (1995). "Using linear algebra for intelligent information retrieval". SIAM Review, 37(4), 573-595.
-   - Especifica uso de álgebra lineal (SVD) para recuperación de información
-   - Explica reducción dimensional y preservación de semántica latente
-
-3. Landauer, T. K., Foltz, P. W., & Laham, D. (1998). "Introduction to Latent Semantic Analysis". Discourse Processes, 25(2-3), 259-284.
-   - Define LSA/LSI como técnica de análisis semántico latente
-   - Explica captura de relaciones semánticas entre términos y documentos
-
-Fuente para técnicas específicas:
-4. Rocchio, J. J. (1971). "Relevance feedback in information retrieval". The SMART Retrieval System: Experiments in Automatic Document Processing, 313-323.
-   - Base teórica para expansión de consultas (Pseudo-Relevance Feedback)
+Fuente bibliográfica: 
+- Deerwester, S., et al. (1990). "Indexing by Latent Semantic Analysis". Journal of the American Society for Information Science.
+- Documentación de Scikit-learn (sklearn)
 ...
 
 Mejora implementada:
@@ -44,13 +31,12 @@ Mejora implementada:
     - Descarta documentos con score < 65% del máximo
     - Justificación: El umbral se calcula como el 65% del score máximo de cada consulta específica, no es un valor fijo predefinido. Esto significa que se adapta automáticamente a la distribución de similitudes de cada consulta individual.
     -. Beneficio: Reduce ruido en resultados
-
 ...
 
 Definición del modelo:
 Q: Consultas representadas como vectores en espacio latente (SVD(query)).
 D: Documentos proyectados en espacio latente (SVD(docs)).
-F: Framework scikit-learn con TruncatedSVD, TfidfVectorizer y cosine_similarity.
+F: Espacio vectorial de dimensión k (k < n tras reducción dimensional) operaciones entre vectores del Álgebra Lineal.
 R: sim(dj, q) en el rango [0,1], donde mayores valores indican mayor similitud semántica.
 
 ¿Dependencia entre los términos?
